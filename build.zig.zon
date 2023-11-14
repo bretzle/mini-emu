@@ -1,0 +1,10 @@
+.{
+    .name = "mini-emu",
+    .version = "0.0.1",
+    .dependencies = .{
+        .imgui = .{
+            .url = "https://gitlab.com/joshua.software.dev/Zig-ImGui/-/archive/22a034c1b8bcc24566409a42163f37231b268d3b/Zig-ImGui-22a034c1b8bcc24566409a42163f37231b268d3b.tar.gz",
+            .hash = "12202d28fa1c367fdbfac37c136e7cab4d1b8ed3b4a0cf0ef2494c8d2d2cde6d3e6f",
+        }
+    }
+}
