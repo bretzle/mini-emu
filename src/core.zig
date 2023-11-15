@@ -145,6 +145,10 @@ fn Core(comptime isa: Architecture) type {
         pub fn read(self: *Self, comptime T: type, addr: u32) T {
             return self.bus.read(T, addr);
         }
+
+        pub fn write(self: *Self, comptime T: type, addr: u32, val: T) void {
+            return self.bus.write(T, addr, val);
+        }
     };
 }
 
