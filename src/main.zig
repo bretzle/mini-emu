@@ -19,33 +19,25 @@ pub fn main() !void {
     var ibus = interface.Bus.create(&bus);
     var isched = interface.Scheduler.create(&sched);
     var cpu = core.Arm7tdmi.create(isched, ibus);
-    
+
     try bus.init(allocator, &sched, &cpu);
     defer bus.deinit();
 
-    ibus.reset();
+    // direct boot
+    if (true) {
+        const Bank = core.Arm7tdmi.Bank;
 
-    for (0..10) |_| {
-        cpu.step();
+        @memset(&cpu.regs, 0);
+        cpu.regs[13] = 0x03007F00;
+        cpu.regs[15] = 0x08000000;
+
+        cpu.bank.regs[Bank.regIdx(.Irq, .R13)] = 0x0300_7FA0;
+        cpu.bank.regs[Bank.regIdx(.Supervisor, .R13)] = 0x0300_7FE0;
+
+        cpu.cpsr = .{ .mode = .System };
+
+        // TODO set bios latch
     }
+
+    while (true) cpu.step();
 }
-
-const MyBus = struct {
-    const Self = @This();
-
-    pub fn read(_: *Self, comptime T: type, _: u32) T {
-        return 0;
-    }
-
-    pub fn write(_: *Self, comptime T: type, _: u32, _: T) void {}
-
-    pub fn dbgRead(_: *Self, comptime T: type, _: u32) T {
-        return 0;
-    }
-
-    pub fn dbgWrite(_: *Self, comptime T: type, _: u32, _: T) void {}
-
-    pub fn reset(_: *Self) void {
-        std.debug.print("reseting!\n\n", .{});
-    }
-};

@@ -25,12 +25,6 @@ fn Core(comptime isa: Architecture) type {
         }
     };
 
-    const Bank = struct {
-        regs: [12]u32 = [_]u32{0} ** 12,
-        fiq: [10]u32 = [_]u32{0} ** 10,
-        spsr: [5]StatusReg = [_]StatusReg{.{}} ** 5,
-    };
-
     return struct {
         const Self = @This();
         pub const arch = isa;
@@ -45,6 +39,27 @@ fn Core(comptime isa: Architecture) type {
         cpsr: StatusReg = .{ .mode = .System },
         spsr: StatusReg = @bitCast(@as(u32, 0)),
         bank: Bank = .{},
+
+        pub const Bank = struct {
+            regs: [12]u32 = [_]u32{0} ** 12,
+            fiq: [10]u32 = [_]u32{0} ** 10,
+            spsr: [5]StatusReg = [_]StatusReg{.{}} ** 5,
+
+            const Kind = enum(u1) { R13 = 0, R14 };
+
+            pub inline fn regIdx(mode: Mode, kind: Kind) usize {
+                const idx: usize = switch (mode) {
+                    .User, .System => 0,
+                    .Supervisor => 1,
+                    .Abort => 2,
+                    .Undefined => 3,
+                    .Irq => 4,
+                    .Fiq => 5,
+                };
+
+                return (idx * 2) + if (kind == .R14) @as(usize, 1) else 0;
+            }
+        };
 
         pub fn create(scheduler: interface.Scheduler, bus: interface.Bus) Self {
             return .{
