@@ -3,16 +3,21 @@ const imgui = @import("imgui");
 const sokol = @import("sokol");
 
 const core = @import("core.zig");
+const Scheduler = @import("gba/scheduler.zig");
 const interface = @import("interface.zig");
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var allocator = gpa.allocator();
 
 pub fn main() !void {
-    const isched = .{};
+    var sched = Scheduler.init(allocator);
+    defer sched.deinit();
+
     var bus = MyBus{};
-    var ibus = interface.Bus.create(&bus);
     
+    var ibus = interface.Bus.create(&bus);
+    var isched = interface.Scheduler.create(&sched);
+
     var cpu = core.Arm7tdmi.create(isched, ibus);
 
     ibus.reset();

@@ -1,6 +1,47 @@
 const std = @import("std");
 
-pub const Scheduler = struct {};
+pub const Scheduler = struct {
+    ptr: *anyopaque,
+    nowFn: *const fn (ptr: *anyopaque) u64,
+    resetFn: *const fn (ptr: *anyopaque) void,
+
+    pub fn create(scheduler: anytype) @This() {
+        const P = @TypeOf(scheduler);
+        const info = @typeInfo(P);
+
+        comptime {
+            std.debug.assert(info == .Pointer);
+            std.debug.assert(info.Pointer.size == .One);
+            std.debug.assert(@typeInfo(info.Pointer.child) == .Struct);
+        }
+
+        const impl = struct {
+            fn now(ptr: *anyopaque) u64 {
+                const self: P = @ptrCast(@alignCast(ptr));
+                return self.now();
+            }
+
+            fn reset(ptr: *anyopaque) void {
+                const self: P = @ptrCast(@alignCast(ptr));
+                return self.reset();
+            }
+        };
+
+        return .{
+            .ptr = scheduler,
+            .nowFn = impl.now,
+            .resetFn = impl.reset,
+        };
+    }
+
+    pub fn now(self: @This()) u64 {
+        return self.nowFn(self.ptr);
+    }
+
+    pub fn reset(self: @This()) void {
+        return self.resetFn(self.ptr);
+    }
+};
 
 pub const Bus = struct {
     ptr: *anyopaque,
@@ -167,3 +208,5 @@ pub const Bus = struct {
         self.vtable.reset(self.ptr);
     }
 };
+
+// TODO: will eventually need a coprocessor interface
