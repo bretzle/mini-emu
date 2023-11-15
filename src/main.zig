@@ -3,6 +3,7 @@ const imgui = @import("imgui");
 const sokol = @import("sokol");
 
 const core = @import("core.zig");
+const interface = @import("interface.zig");
 
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 var allocator = gpa.allocator();
@@ -10,8 +11,8 @@ var allocator = gpa.allocator();
 pub fn main() !void {
     const isched = .{};
     var bus = MyBus{};
-    var ibus = core.IBus.create(&bus);
-
+    var ibus = interface.Bus.create(&bus);
+    
     var cpu = core.Arm7tdmi.create(isched, ibus);
 
     ibus.reset();
