@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const Bios = @import("bus/bios.zig");
 const Cartridge = @import("bus/cartridge.zig");
 const Scheduler = @import("scheduler.zig");
 const Arm7tdmi = @import("../core.zig").Arm7tdmi;
@@ -26,6 +27,7 @@ const table_len = address_space_size / page_size;
 
 const Self = @This();
 
+bios: Bios,
 cartridge: Cartridge,
 
 cpu: *Arm7tdmi,
@@ -35,6 +37,7 @@ allocator: Allocator,
 
 pub fn init(self: *Self, allocator: Allocator, sched: *Scheduler, cpu: *Arm7tdmi) !void {
     self.* = .{
+        .bios = try Bios.init(allocator, "bios.bin"),
         .cartridge = try Cartridge.init(allocator, "roms/first-1.gba", null),
         .cpu = cpu,
         .sched = sched,
@@ -43,6 +46,8 @@ pub fn init(self: *Self, allocator: Allocator, sched: *Scheduler, cpu: *Arm7tdmi
 }
 
 pub fn deinit(self: *Self) void {
+    self.bios.deinit();
+    self.cartridge.deinit();
     self.* = undefined;
 }
 
@@ -80,7 +85,7 @@ fn slowRead(self: *Self, comptime T: type, addr: u32) T {
     const address = forceAlign(T, addr);
 
     return switch (page) {
-        0x00 => @panic("todo"), // bios
+        0x00 => if (addr < Bios.size) self.bios.read(T, self.cpu.regs[15], addr) else @panic("open bus"),
 
         0x02 => @panic("todo"), // on-board work ram
         0x03 => @panic("todo"), // on-chip work ram
@@ -96,7 +101,7 @@ fn slowRead(self: *Self, comptime T: type, addr: u32) T {
     };
 }
 
-inline fn forceAlign(comptime T: type, address: u32) u32 {
+pub inline fn forceAlign(comptime T: type, address: u32) u32 {
     return switch (T) {
         u32 => address & ~@as(u32, 3),
         u16 => address & ~@as(u32, 1),
