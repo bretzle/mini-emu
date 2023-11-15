@@ -10,21 +10,6 @@ fn Core(comptime isa: Architecture) type {
         @compileError("other isa's are not yet implimented");
     }
 
-    const Pipeline = struct {
-        stage: [2]?u32 = [_]?u32{null} ** 2,
-        flushed: bool = false,
-
-        fn step(self: *@This(), comptime T: type, cpu: *Core(isa)) ?T {
-            comptime std.debug.assert(T == u32 or T == u16);
-
-            const opcode = self.stage[0];
-            self.stage[0] = self.stage[1];
-            self.stage[1] = cpu.fetch(T, cpu.regs[15]);
-
-            return @truncate(opcode orelse return null);
-        }
-    };
-
     return struct {
         const Self = @This();
         pub const arch = isa;
@@ -39,6 +24,35 @@ fn Core(comptime isa: Architecture) type {
         cpsr: StatusReg = .{ .mode = .System },
         spsr: StatusReg = @bitCast(@as(u32, 0)),
         bank: Bank = .{},
+
+        const Pipeline = struct {
+            stage: [2]?u32 = [_]?u32{null} ** 2,
+            flushed: bool = false,
+
+            fn step(self: *@This(), comptime T: type, cpu: *Self) ?T {
+                comptime std.debug.assert(T == u32 or T == u16);
+
+                const opcode = self.stage[0];
+                self.stage[0] = self.stage[1];
+                self.stage[1] = cpu.fetch(T, cpu.regs[15]);
+
+                return @truncate(opcode orelse return null);
+            }
+
+            pub fn reload(self: *@This(), cpu: *Self) void {
+                if (cpu.cpsr.thumb) {
+                    self.stage[0] = cpu.fetch(u16, cpu.regs[15]);
+                    self.stage[1] = cpu.fetch(u16, cpu.regs[15] + 2);
+                    cpu.regs[15] += 4;
+                } else {
+                    self.stage[0] = cpu.fetch(u32, cpu.regs[15]);
+                    self.stage[1] = cpu.fetch(u32, cpu.regs[15] + 4);
+                    cpu.regs[15] += 8;
+                }
+
+                self.flushed = true;
+            }
+        };
 
         pub const Bank = struct {
             regs: [12]u32 = [_]u32{0} ** 12,
