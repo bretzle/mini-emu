@@ -1,80 +1,123 @@
 const std = @import("std");
 const Arm7tdmi = @import("../core.zig").Arm7tdmi;
 
-const processing = @import("arm/data_processing.zig").dataProcessing;
-const transfer = @import("arm/single_data_transfer.zig").singleDataTransfer;
-const blockTransfer = @import("arm/block_data_transfer.zig").blockDataTransfer;
-const branch = @import("arm/branch.zig").branch;
-const branchExchange = @import("arm/branch.zig").branchAndExchange;
+const transfer = @import("arm/transfer.zig");
+const branch = @import("arm/branch.zig");
+const mult = @import("arm/multiply.zig");
 const swi = @import("arm/software_interrupt.zig").softwareInterrupt;
-const loadStoreExt = @import("arm/half_signed_data_transfer.zig").halfAndSignedDataTransfer;
-const controlExt = @import("arm/psr_transfer.zig").control;
-const multiplyExt = @import("arm/multiply.zig").multiply;
+const dataProcessing = @import("arm/data_processing.zig").dataProcessing;
+const statusTransfer = @import("arm/psr.zig").statusTransfer;
 
 pub const Handler = *const fn (*Arm7tdmi, u32) void;
 pub const lut = generate();
 
 pub fn idx(opcode: u32) u12 {
-    return @as(u12, @truncate(opcode >> 20 & 0xFF)) << 4 | @as(u12, @truncate(opcode >> 4 & 0xF));
+    return @truncate(((opcode >> 16) & 0xFF0) | ((opcode >> 4) & 0xF));
 }
 
 fn generate() [0x1000]Handler {
     return comptime cblk: {
-        @setEvalBranchQuota(7169);
+        @setEvalBranchQuota(10000);
         var table = [_]Handler{und} ** 0x1000;
 
-        for (&table, 0..) |*handler, i| {
-            handler.* = switch (@as(u2, i >> 10)) {
-                0b00 => if (i == 0x121) blk: { // 12 bits
-                    break :blk branchExchange(Handler);
-                } else if (i & 0xF0F == 0x009) blk: { // 8 bits
-                    const L = i >> 7 & 1 == 1;
-                    const U = i >> 6 & 1 == 1;
-                    const A = i >> 5 & 1 == 1;
-                    const S = i >> 4 & 1 == 1;
-                    break :blk multiplyExt(Handler, L, U, A, S);
-                } else if (i & 0xE49 == 0x009 or i & 0xE49 == 0x049) blk: { // 6 bits
-                    const P = i >> 8 & 1 == 1;
-                    const U = i >> 7 & 1 == 1;
-                    const I = i >> 6 & 1 == 1;
-                    const W = i >> 5 & 1 == 1;
-                    const L = i >> 4 & 1 == 1;
-                    break :blk loadStoreExt(Handler, P, U, I, W, L);
-                } else if (i & 0xD90 == 0x100) blk: { // 5 bits
-                    const I = i >> 9 & 1 == 1;
-                    const op = ((i >> 5) & 0x3) << 4 | (i & 0xF);
-                    break :blk controlExt(Handler, I, op);
-                } else blk: {
-                    const I = i >> 9 & 1 == 1;
-                    const S = i >> 4 & 1 == 1;
-                    const instr_kind = i >> 5 & 0xF;
-                    break :blk processing(Handler, I, S, instr_kind);
+        for (&table, 0..) |*handler, instruction| {
+            const opcode = instruction & 0x0FFFFFFF;
+
+            const pre = instruction & (1 << 24) != 0;
+            const add = instruction & (1 << 23) != 0;
+            const wb = instruction & (1 << 21) != 0;
+            const load = instruction & (1 << 20) != 0;
+
+            handler.* = switch (@as(u2, opcode >> 26)) {
+                0b00 => blk: {
+                    if (opcode & (1 << 25) != 0) {
+                        // ARM.8 Data processing and PSR transfer ... immediate
+                        const set_flags = instruction & (1 << 20) != 0;
+                        const op = (instruction >> 21) & 0xF;
+
+                        if (!set_flags and op >= 0b1000 and op <= 0b1011) {
+                            const use_spsr = instruction & (1 << 22) != 0;
+                            const to_status = instruction & (1 << 21) != 0;
+                            break :blk statusTransfer(Handler, true, use_spsr, to_status);
+                        } else {
+                            const field4 = (instruction >> 4) & 0xF;
+                            break :blk dataProcessing(true, @enumFromInt(op), set_flags, field4);
+                        }
+                    } else if ((opcode & 0xFF000F0) == 0x1200010) {
+                        // ARM.3 Branch and exchange
+                        // TODO: Some bad instructions might be falsely detected as BX.
+                        // How does HW handle this?
+                        break :blk branch.branchAndExchange(Handler);
+                    } else if ((opcode & 0x10000F0) == 0x0000090) {
+                        // ARM.1 Multiply (accumulate), ARM.2 Multiply (accumulate) long
+                        const accumulate = instruction & (1 << 21) != 0;
+                        const set_flags = instruction & (1 << 20) != 0;
+
+                        if (opcode & (1 << 23) != 0) {
+                            const sign_extend = instruction & (1 << 22) != 0;
+                            break :blk mult.multiplyLong(Handler, sign_extend, accumulate, set_flags);
+                        } else {
+                            break :blk mult.multiply(Handler, accumulate, set_flags);
+                        }
+                    } else if ((opcode & 0x10000F0) == 0x1000090) {
+                        // ARM.4 Single data swap
+                        const byte = instruction & (1 << 22) != 0;
+                        break :blk transfer.singleDataSwap(Handler, byte);
+                    } else if ((opcode & 0xF0) == 0xB0 or (opcode & 0xD0) == 0xD0) {
+                        // ARM.5 Halfword data transfer, register offset
+                        // ARM.6 Halfword data transfer, immediate offset
+                        // ARM.7 Signed data transfer (byte/halfword)
+                        const immediate = instruction & (1 << 22) != 0;
+                        const op = (instruction >> 5) & 3;
+                        break :blk transfer.halfwordSignedTransfer(Handler, pre, add, immediate, wb, load, op);
+                    } else {
+                        // ARM.8 Data processing and PSR transfer
+                        const set_flags = instruction & (1 << 20) != 0;
+                        const op = (instruction >> 21) & 0xF;
+
+                        if (!set_flags and op >= 0b1000 and op <= 0b1011) {
+                            const use_spsr = instruction & (1 << 22) != 0;
+                            const to_status = instruction & (1 << 21) != 0;
+                            break :blk statusTransfer(Handler, false, use_spsr, to_status);
+                        } else {
+                            const field4 = (instruction >> 4) & 0xF;
+                            break :blk dataProcessing(Handler, false, @enumFromInt(op), set_flags, field4);
+                        }
+                    }
                 },
-                0b01 => if (i >> 9 & 1 == 1 and i & 1 == 1) und else blk: {
-                    const I = i >> 9 & 1 == 1;
-                    const P = i >> 8 & 1 == 1;
-                    const U = i >> 7 & 1 == 1;
-                    const B = i >> 6 & 1 == 1;
-                    const W = i >> 5 & 1 == 1;
-                    const L = i >> 4 & 1 == 1;
-                    break :blk transfer(Handler, I, P, U, B, W, L);
+                0b01 => blk: {
+                    // ARM.9 Single data transfer, ARM.10 Undefined
+                    if ((opcode & 0x2000010) == 0x2000010) {
+                        break :blk und;
+                    } else {
+                        const immediate = ~instruction & (1 << 25);
+                        const byte = instruction & (1 << 22);
+                        break :blk transfer.singleDataTransfer(Handler, immediate, pre, add, byte, wb, load);
+                    }
                 },
-                else => switch (@as(u2, i >> 9 & 0x3)) {
-                    // MSB is guaranteed to be 1
-                    0b00 => blk: {
-                        const P = i >> 8 & 1 == 1;
-                        const U = i >> 7 & 1 == 1;
-                        const S = i >> 6 & 1 == 1;
-                        const W = i >> 5 & 1 == 1;
-                        const L = i >> 4 & 1 == 1;
-                        break :blk blockTransfer(Handler, P, U, S, W, L);
-                    },
-                    0b01 => blk: {
-                        const L = i >> 8 & 1 == 1;
-                        break :blk branch(Handler, L);
-                    },
-                    0b10 => und, // COP Data Transfer
-                    0b11 => if (i >> 8 & 1 == 1) swi(Handler) else und, // COP Data Operation + Register Transfer
+                0b10 => blk: {
+                    // ARM.11 Block data transfer, ARM.12 Branch
+                    if (opcode & (1 << 25)) {
+                        break :blk branch.branchAndLink(Handler, (opcode >> 24) & 1 != 0);
+                    } else {
+                        const user_mode = instruction & (1 << 22) != 0;
+                        break :blk transfer.blockDataTransfer(Handler, pre, add, user_mode, wb, load);
+                    }
+                },
+                0b11 => blk: {
+                    if (opcode & (1 << 25) != 0) {
+                        if (opcode & (1 << 24) != 0) {
+                            // ARM.16 Software interrupt
+                            break :blk swi(Handler);
+                        } else {
+                            // ARM.14 Coprocessor data operation
+                            // ARM.15 Coprocessor register transfer
+                            break :blk und;
+                        }
+                    } else {
+                        // ARM.13 Coprocessor data transfer
+                        break :blk und;
+                    }
                 },
             };
         }

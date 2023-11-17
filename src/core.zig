@@ -132,12 +132,12 @@ fn Core(comptime isa: Architecture) type {
                 const id = thumb.idx(opcode);
                 std.debug.print("opcode: ID: 0x{b:0>10} 0x{X:0>4}\n", .{ id, opcode });
             } else {
-                const opcode = self.bus.dbgRead(u32, self.regs[15] - 4);
+                const opcode = self.bus.dbgRead(u32, self.regs[15] - 8);
                 const id = arm.idx(opcode);
                 std.debug.print("opcode: ID: 0x{X:0>3} 0x{X:0>8}\n", .{ id, opcode });
             }
 
-            // TODO: std.debug.print("tick: {}\n\n", .{self.sched.now()});
+            std.debug.print("tick: {}\n\n", .{self.scheduler.now()});
 
             std.debug.panic(fmt, args);
         }
