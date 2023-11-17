@@ -20,7 +20,8 @@ fn generate() [0x1000]Handler {
         @setEvalBranchQuota(10000);
         var table = [_]Handler{und} ** 0x1000;
 
-        for (&table, 0..) |*handler, instruction| {
+        for (&table, 0..) |*handler, i| {
+            const instruction = ((i & 0xFF0) << 16) | ((i & 0xF) << 4);
             const opcode = instruction & 0x0FFFFFFF;
 
             const pre = instruction & (1 << 24) != 0;
@@ -41,7 +42,7 @@ fn generate() [0x1000]Handler {
                             break :blk statusTransfer(Handler, true, use_spsr, to_status);
                         } else {
                             const field4 = (instruction >> 4) & 0xF;
-                            break :blk dataProcessing(true, @enumFromInt(op), set_flags, field4);
+                            break :blk dataProcessing(Handler, true, @enumFromInt(op), set_flags, field4);
                         }
                     } else if ((opcode & 0xFF000F0) == 0x1200010) {
                         // ARM.3 Branch and exchange
@@ -90,14 +91,14 @@ fn generate() [0x1000]Handler {
                     if ((opcode & 0x2000010) == 0x2000010) {
                         break :blk und;
                     } else {
-                        const immediate = ~instruction & (1 << 25);
-                        const byte = instruction & (1 << 22);
+                        const immediate = ~instruction & (1 << 25) != 0;
+                        const byte = instruction & (1 << 22) != 0;
                         break :blk transfer.singleDataTransfer(Handler, immediate, pre, add, byte, wb, load);
                     }
                 },
                 0b10 => blk: {
                     // ARM.11 Block data transfer, ARM.12 Branch
-                    if (opcode & (1 << 25)) {
+                    if (opcode & (1 << 25) != 0) {
                         break :blk branch.branchAndLink(Handler, (opcode >> 24) & 1 != 0);
                     } else {
                         const user_mode = instruction & (1 << 22) != 0;
