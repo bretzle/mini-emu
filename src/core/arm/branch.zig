@@ -37,7 +37,7 @@ pub fn branchAndLink(comptime Handler: type, comptime link: bool) Handler {
             }
 
             if (link) cpu.regs[14] = cpu.regs[15] - 4;
-            cpu.regs[15] += offset * 4;
+            cpu.regs[15] +%= offset *% 4;
             cpu.pipe.reload(cpu);
         }
     }.impl;

@@ -1,6 +1,8 @@
 const std = @import("std");
 const interface = @import("interface.zig");
 
+const log = std.log.scoped(.Core);
+
 const Architecture = enum { v4t, v5te };
 
 pub const Arm7tdmi = Core(.v4t);
@@ -115,6 +117,7 @@ fn Core(comptime isa: Architecture) type {
                 const cond: u4 = @truncate(opcode >> 28);
 
                 if (self.cpsr.check(isa, cond)) {
+                    // log.debug("running `{X:0>8}`", .{opcode});
                     arm.lut[arm.idx(opcode)](self, opcode);
                 }
             }

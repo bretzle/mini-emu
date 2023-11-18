@@ -69,7 +69,7 @@ fn generate() [0x1000]Handler {
                         // ARM.6 Halfword data transfer, immediate offset
                         // ARM.7 Signed data transfer (byte/halfword)
                         const immediate = instruction & (1 << 22) != 0;
-                        const op = (instruction >> 5) & 3;
+                        const op: u2 = @truncate(instruction >> 5);
                         break :blk transfer.halfwordSignedTransfer(Handler, pre, add, immediate, wb, load, op);
                     } else {
                         // ARM.8 Data processing and PSR transfer
