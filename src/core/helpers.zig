@@ -52,18 +52,18 @@ pub fn immediate(comptime S: bool, cpu: anytype, opcode: u32) u32 {
             },
             0b01 => {
                 // LSR #0 aka LSR #32
-                if (S) cpu.cpsr.c.write(rm >> 31 & 1 == 1);
+                if (S) cpu.cpsr.carry = rm >> 31 & 1 == 1;
                 result = 0;
             },
             0b10 => {
                 // ASR #0 aka ASR #32
                 result = @bitCast(@as(i32, @bitCast(rm)) >> 31);
-                if (S) cpu.cpsr.c.write(result >> 31 & 1 == 1);
+                if (S) cpu.cpsr.carry = result >> 31 & 1 == 1;
             },
             0b11 => {
                 // ROR #0 aka RRX
                 const carry: u32 = @intFromBool(cpu.cpsr.carry);
-                if (S) cpu.cpsr.c.write(rm & 1 == 1);
+                if (S) cpu.cpsr.carry = rm & 1 == 1;
 
                 result = (carry << 31) | (rm >> 1);
             },
@@ -89,15 +89,15 @@ pub fn lsl(comptime S: bool, cpsr: *StatusReg, rm: u32, total_amount: u8) u32 {
 
         if (S and total_amount != 0) {
             const carry_bit: u5 = @truncate(bit_count - amount);
-            cpsr.c.write(rm >> carry_bit & 1 == 1);
+            cpsr.carry = rm >> carry_bit & 1 == 1;
         }
     } else {
         if (S) {
             if (total_amount == bit_count) {
                 // Shifted all bits out, carry bit is bit 0 of rm
-                cpsr.c.write(rm & 1 == 1);
+                cpsr.carry = rm & 1 == 1;
             } else {
-                cpsr.c.write(false);
+                cpsr.carry = false;
             }
         }
     }
@@ -113,15 +113,15 @@ pub fn lsr(comptime S: bool, cpsr: *StatusReg, rm: u32, total_amount: u32) u32 {
     if (total_amount < bit_count) {
         // We can perform a well-defined shift
         result = rm >> amount;
-        if (S and total_amount != 0) cpsr.c.write(rm >> (amount - 1) & 1 == 1);
+        if (S and total_amount != 0) cpsr.carry = rm >> (amount - 1) & 1 == 1;
     } else {
         if (S) {
             if (total_amount == bit_count) {
                 // LSR #32
-                cpsr.c.write(rm >> 31 & 1 == 1);
+                cpsr.carry = rm >> 31 & 1 == 1;
             } else {
                 // All bits have been shifted out, including carry bit
-                cpsr.c.write(false);
+                cpsr.carry = false;
             }
         }
     }
@@ -136,11 +136,11 @@ pub fn asr(comptime S: bool, cpsr: *StatusReg, rm: u32, total_amount: u8) u32 {
     var result: u32 = 0x0000_0000;
     if (total_amount < bit_count) {
         result = @bitCast(@as(i32, @bitCast(rm)) >> amount);
-        if (S and total_amount != 0) cpsr.c.write(rm >> (amount - 1) & 1 == 1);
+        if (S and total_amount != 0) cpsr.carry = rm >> (amount - 1) & 1 == 1;
     } else {
         // ASR #32 and ASR #>32 have the same result
         result = @bitCast(@as(i32, @bitCast(rm)) >> 31);
-        if (S) cpsr.c.write(result >> 31 & 1 == 1);
+        if (S) cpsr.carry = result >> 31 & 1 == 1;
     }
 
     return result;
@@ -150,7 +150,7 @@ pub fn ror(comptime S: bool, cpsr: *StatusReg, rm: u32, total_amount: u8) u32 {
     const result = rotr(u32, rm, total_amount);
 
     if (S and total_amount != 0) {
-        cpsr.c.write(result >> 31 & 1 == 1);
+        cpsr.carry = result >> 31 & 1 == 1;
     }
 
     return result;

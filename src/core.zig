@@ -73,6 +73,21 @@ fn Core(comptime isa: Architecture) type {
 
                 return (idx * 2) + if (kind == .R14) @as(usize, 1) else 0;
             }
+
+            inline fn spsrIdx(mode: Mode) usize {
+                return switch (mode) {
+                    .Supervisor => 0,
+                    .Abort => 1,
+                    .Undefined => 2,
+                    .Irq => 3,
+                    .Fiq => 4,
+                    else => std.debug.panic("[CPU/Mode] {} does not have a SPSR Register", .{mode}),
+                };
+            }
+
+            inline fn fiqIdx(i: usize, mode: Mode) usize {
+                return (i * 2) + if (mode == .Fiq) @as(usize, 1) else 0;
+            }
         };
 
         pub fn create(scheduler: interface.Scheduler, bus: interface.Bus) Self {
@@ -149,6 +164,53 @@ fn Core(comptime isa: Architecture) type {
         pub fn write(self: *Self, comptime T: type, addr: u32, val: T) void {
             return self.bus.write(T, addr, val);
         }
+
+        pub fn setCpsr(self: *Self, val: StatusReg) void {
+            if (val.mode != self.cpsr.mode) self.changeMode(val.mode);
+            self.cpsr = val;
+        }
+
+        pub fn changeMode(self: *Self, next: Mode) void {
+            const now = self.cpsr.mode.checked() orelse self.panic("[CPU/CPSR] 0b{b:0>5} is an invalid mode", .{@intFromEnum(self.cpsr.mode)});
+
+            // bank R8 -> R12
+            for (0..5) |i| {
+                self.bank.fiq[Bank.fiqIdx(i, now)] = self.regs[8 + i];
+            }
+
+            // bank R13, R14, SPSR
+            switch (now) {
+                .User, .System => {
+                    self.bank.regs[Bank.regIdx(now, .R13)] = self.regs[13];
+                    self.bank.regs[Bank.regIdx(now, .R14)] = self.regs[14];
+                },
+                else => {
+                    self.bank.regs[Bank.regIdx(now, .R13)] = self.regs[13];
+                    self.bank.regs[Bank.regIdx(now, .R14)] = self.regs[14];
+                    self.bank.spsr[Bank.spsrIdx(now)] = self.spsr;
+                },
+            }
+
+            // grab R8 -> R12
+            for (0..5) |i| {
+                self.regs[8 + i] = self.bank.fiq[Bank.fiqIdx(i, next)];
+            }
+
+            // grab R13, R14, SPSR
+            switch (next) {
+                .User, .System => {
+                    self.regs[13] = self.bank.regs[Bank.regIdx(next, .R13)];
+                    self.regs[14] = self.bank.regs[Bank.regIdx(next, .R14)];
+                },
+                else => {
+                    self.regs[13] = self.bank.regs[Bank.regIdx(next, .R13)];
+                    self.regs[14] = self.bank.regs[Bank.regIdx(next, .R14)];
+                    self.spsr = self.bank.spsr[Bank.spsrIdx(next)];
+                },
+            }
+
+            self.cpsr.mode = next;
+        }
     };
 }
 
@@ -175,6 +237,10 @@ pub const Mode = enum(u5) {
 
     pub fn get(bits: u5) ?@This() {
         return std.meta.intToEnum(@This(), bits) catch null;
+    }
+
+    pub fn checked(self: @This()) ?@This() {
+        return get(@intFromEnum(self));
     }
 };
 
