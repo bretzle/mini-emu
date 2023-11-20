@@ -35,8 +35,8 @@ sched: *Scheduler,
 
 allocator: Allocator,
 
-pub fn init(self: *Self, allocator: Allocator, sched: *Scheduler, cpu: *Arm7tdmi) !void {
-    self.* = .{
+pub fn init(allocator: Allocator, sched: *Scheduler, cpu: *Arm7tdmi) !Self {
+    return .{
         .bios = try Bios.init(allocator, "bios.bin"),
         .cartridge = try Cartridge.init(allocator, "roms/first-1.gba", null),
         .cpu = cpu,
